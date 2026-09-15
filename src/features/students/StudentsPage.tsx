@@ -9,6 +9,8 @@ import {
   ExperimentOutlined,
   UndoOutlined,
   RedoOutlined,
+  AppstoreOutlined,
+  TableOutlined,
 } from '@ant-design/icons';
 import { SelectionBar } from '../../components/SelectionBar';
 import { useSelectionStore } from '../../stores/selection.store';
@@ -24,9 +26,12 @@ import { FilterPopover, type StudentFilters } from './FilterPopover';
 import { ExportButton } from './ExportButton';
 import { StudentFormDrawer } from './StudentFormDrawer';
 import { StudentGrid, type FieldChange } from './StudentGrid';
+import { StudentCardList } from './StudentCardList';
+import { StudentDetailModal } from './StudentDetailModal';
 import { fieldDefinitionToColumn } from './dynamic-columns';
 import type { StudentColumnDef } from './student-columns';
 import { makePlaceholderStudent, makePlaceholderStudents, PLACEHOLDER_ROW_COUNT } from './placeholder-row';
+import { useViewModeStore } from './view-mode.store';
 
 /** A single grid edit (one cell, or one paste covering several cells), for undo/redo. */
 type GridOperation = { changes: FieldChange[] };
@@ -48,7 +53,9 @@ export function StudentsPage() {
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
+  const [detailStudent, setDetailStudent] = useState<Student | null>(null);
   const [fieldDefinitions, setFieldDefinitions] = useState<FieldDefinition[]>([]);
+  const { viewMode, setViewMode } = useViewModeStore();
 
   const [undoStack, setUndoStack] = useState<GridOperation[]>([]);
   const [redoStack, setRedoStack] = useState<GridOperation[]>([]);
@@ -375,7 +382,7 @@ export function StudentsPage() {
     <div className="sms-page-shell">
       <div className="sms-page-card">
         <Space align="center" wrap style={{ justifyContent: 'space-between', width: '100%' }}>
-          <div>
+          <div style={{ flex: '1 1 240px', minWidth: 200 }}>
             <Typography.Title level={3} style={{ margin: 0 }}>
               Quản lý học sinh
             </Typography.Title>
@@ -383,7 +390,7 @@ export function StudentsPage() {
               Nhập liệu, chỉnh sửa và theo dõi thông tin học sinh theo năm học và lớp.
             </Typography.Text>
           </div>
-          <Space>
+          <Space wrap style={{ flexShrink: 0 }}>
             <Tooltip title="Hoàn tác (Ctrl+Z)">
               <Button
                 icon={<UndoOutlined />}
@@ -450,6 +457,22 @@ export function StudentsPage() {
               allowClear
             />
             <FilterPopover filters={filters} onChange={setFilters} />
+            <Space.Compact>
+              <Tooltip title="Dạng thẻ">
+                <Button
+                  icon={<AppstoreOutlined />}
+                  type={viewMode === 'card' ? 'primary' : 'default'}
+                  onClick={() => setViewMode('card')}
+                />
+              </Tooltip>
+              <Tooltip title="Dạng bảng">
+                <Button
+                  icon={<TableOutlined />}
+                  type={viewMode === 'table' ? 'primary' : 'default'}
+                  onClick={() => setViewMode('table')}
+                />
+              </Tooltip>
+            </Space.Compact>
             <ColumnSelectorButton
               schoolYearId={schoolYearId}
               fieldDefinitions={fieldDefinitions}
@@ -485,27 +508,40 @@ export function StudentsPage() {
                   dưới để bắt đầu.
                 </Typography.Text>
               )}
-              <StudentGrid
-                rows={displayRows}
-                loading={loading}
-                startIndex={(page - 1) * limit}
-                visibleKeys={visibleKeys}
-                dynamicColumns={dynamicColumns}
-                sortColumns={sortColumns}
-                onSortColumnsChange={handleSortColumnsChange}
-                canReorder={!hasActiveViewFilters}
-                onCellCommit={handleCellCommit}
-                onBulkPaste={handleBulkPaste}
-                onCreateBlankRows={handleCreateBlankRows}
-                onRequestBlankRow={handleRequestBlankRow}
-                onCreateColumns={handleCreateColumns}
-                onReorder={handleReorder}
-                onEditFull={(student) => {
-                  setEditing(student);
-                  setFormOpen(true);
-                }}
-                onDelete={handleDelete}
-              />
+              {viewMode === 'card' ? (
+                <StudentCardList
+                  rows={data}
+                  loading={loading}
+                  onOpenDetail={setDetailStudent}
+                  onEditFull={(student) => {
+                    setEditing(student);
+                    setFormOpen(true);
+                  }}
+                  onDelete={handleDelete}
+                />
+              ) : (
+                <StudentGrid
+                  rows={displayRows}
+                  loading={loading}
+                  startIndex={(page - 1) * limit}
+                  visibleKeys={visibleKeys}
+                  dynamicColumns={dynamicColumns}
+                  sortColumns={sortColumns}
+                  onSortColumnsChange={handleSortColumnsChange}
+                  canReorder={!hasActiveViewFilters}
+                  onCellCommit={handleCellCommit}
+                  onBulkPaste={handleBulkPaste}
+                  onCreateBlankRows={handleCreateBlankRows}
+                  onRequestBlankRow={handleRequestBlankRow}
+                  onCreateColumns={handleCreateColumns}
+                  onReorder={handleReorder}
+                  onEditFull={(student) => {
+                    setEditing(student);
+                    setFormOpen(true);
+                  }}
+                  onDelete={handleDelete}
+                />
+              )}
 
               {data.length > 0 && (
                 <div style={{ marginTop: 12, textAlign: 'right' }}>
@@ -538,6 +574,17 @@ export function StudentsPage() {
           onFieldsChanged={loadFieldDefinitions}
         />
       )}
+
+      <StudentDetailModal
+        student={detailStudent}
+        dynamicColumns={dynamicColumns}
+        onClose={() => setDetailStudent(null)}
+        onEdit={(student) => {
+          setEditing(student);
+          setFormOpen(true);
+        }}
+        onDelete={handleDelete}
+      />
 
       {schoolYearId && (
         <CreateFieldModal
