@@ -33,8 +33,10 @@ import type { StudentColumnDef } from './student-columns';
 import { makePlaceholderStudent, makePlaceholderStudents, PLACEHOLDER_ROW_COUNT } from './placeholder-row';
 import { useViewModeStore } from './view-mode.store';
 
-/** A single grid edit (one cell, or one paste covering several cells), for undo/redo. */
-type GridOperation = { changes: FieldChange[] };
+/** A single undoable grid action: a cell edit / paste, or a row-order change (drag, or a sort committed as the new order). */
+type GridOperation =
+  | { kind: 'fields'; changes: FieldChange[] }
+  | { kind: 'reorder'; prevOrder: string[]; nextOrder: string[] };
 const MAX_HISTORY = 50;
 
 export function StudentsPage() {
@@ -130,30 +132,43 @@ export function StudentsPage() {
     setRedoStack([]);
   }, [schoolYearId, classId]);
 
-  const applyChanges = async (changes: FieldChange[], direction: 'prev' | 'next') => {
-    const plain = new Map<string, Record<string, unknown>>();
-    const dynamic = new Map<string, Record<string, unknown>>();
-    for (const change of changes) {
-      const value = direction === 'prev' ? change.prevValue : change.nextValue;
-      const bucket = change.isDynamic ? dynamic : plain;
-      const entry = bucket.get(change.studentId) ?? {};
-      entry[change.field] = value;
-      bucket.set(change.studentId, entry);
+  const applyOperation = async (op: GridOperation, direction: 'prev' | 'next') => {
+    if (op.kind === 'fields') {
+      const plain = new Map<string, Record<string, unknown>>();
+      const dynamic = new Map<string, Record<string, unknown>>();
+      for (const change of op.changes) {
+        const value = direction === 'prev' ? change.prevValue : change.nextValue;
+        const bucket = change.isDynamic ? dynamic : plain;
+        const entry = bucket.get(change.studentId) ?? {};
+        entry[change.field] = value;
+        bucket.set(change.studentId, entry);
+      }
+      const studentIds = new Set([...plain.keys(), ...dynamic.keys()]);
+      await Promise.all(
+        [...studentIds].map((studentId) => {
+          const payload: Record<string, unknown> = { ...(plain.get(studentId) ?? {}) };
+          const customFields = dynamic.get(studentId);
+          if (customFields) payload.customFields = customFields;
+          return studentsService.update(studentId, payload as any);
+        }),
+      );
+      return;
     }
-    const studentIds = new Set([...plain.keys(), ...dynamic.keys()]);
-    await Promise.all(
-      [...studentIds].map((studentId) => {
-        const payload: Record<string, unknown> = { ...(plain.get(studentId) ?? {}) };
-        const customFields = dynamic.get(studentId);
-        if (customFields) payload.customFields = customFields;
-        return studentsService.update(studentId, payload as any);
-      }),
-    );
+
+    if (!schoolYearId || !classId) return;
+    const order = direction === 'prev' ? op.prevOrder : op.nextOrder;
+    await studentsService.reorder({
+      schoolYearId,
+      classId,
+      items: order.map((studentId, idx) => ({ studentId, order: idx + 1 })),
+    });
+    // The row order is now an explicit sequence again, not "sorted by column X".
+    setSortColumns([]);
   };
 
-  const pushUndo = (changes: FieldChange[]) => {
-    if (changes.length === 0) return;
-    setUndoStack((stack) => [...stack.slice(-(MAX_HISTORY - 1)), { changes }]);
+  const pushUndo = (op: GridOperation) => {
+    if (op.kind === 'fields' && op.changes.length === 0) return;
+    setUndoStack((stack) => [...stack.slice(-(MAX_HISTORY - 1)), op]);
     setRedoStack([]);
   };
 
@@ -164,7 +179,7 @@ export function StudentsPage() {
     setIsUndoRedoBusy(true);
     setUndoStack((stack) => stack.slice(0, -1));
     try {
-      await applyChanges(op.changes, 'prev');
+      await applyOperation(op, 'prev');
       setRedoStack((stack) => [...stack, op]);
       await load();
       message.success('Đã hoàn tác');
@@ -183,7 +198,7 @@ export function StudentsPage() {
     setIsUndoRedoBusy(true);
     setRedoStack((stack) => stack.slice(0, -1));
     try {
-      await applyChanges(op.changes, 'next');
+      await applyOperation(op, 'next');
       setUndoStack((stack) => [...stack, op]);
       await load();
       message.success('Đã làm lại');
@@ -234,7 +249,7 @@ export function StudentsPage() {
     } else {
       await studentsService.update(studentId, { [field]: value } as any);
     }
-    pushUndo([{ studentId, field, isDynamic, prevValue, nextValue: value }]);
+    pushUndo({ kind: 'fields', changes: [{ studentId, field, isDynamic, prevValue, nextValue: value }] });
     message.success('Đã lưu');
   };
 
@@ -251,7 +266,7 @@ export function StudentsPage() {
         .join('; ');
       message.error(`Dán dữ liệu thất bại: ${summary}`);
     } else {
-      pushUndo(changes);
+      pushUndo({ kind: 'fields', changes });
       message.success(`Đã cập nhật ${result.updatedCount} học sinh`);
       load();
     }
@@ -313,13 +328,14 @@ export function StudentsPage() {
   );
   const displayRows = data.length > 0 ? data : placeholderRows;
 
-  const handleReorder = async (orderedIds: string[]) => {
+  const handleReorder = async (prevOrder: string[], nextOrder: string[]) => {
     if (!schoolYearId || !classId) return;
     await studentsService.reorder({
       schoolYearId,
       classId,
-      items: orderedIds.map((studentId, idx) => ({ studentId, order: idx + 1 })),
+      items: nextOrder.map((studentId, idx) => ({ studentId, order: idx + 1 })),
     });
+    pushUndo({ kind: 'reorder', prevOrder, nextOrder });
     // A manual drag takes precedence over whatever sort was showing — drop
     // back to the plain (now manually-adjusted) displayOrder view instead of
     // re-querying by the old sort on the next reload, which would otherwise
@@ -344,6 +360,31 @@ export function StudentsPage() {
     });
   };
 
+  const fetchAllStudentIds = async (
+    forSchoolYearId: string,
+    forClassId: string,
+    sortBy?: string,
+    sortOrder?: 'asc' | 'desc',
+  ): Promise<string[]> => {
+    const all: Student[] = [];
+    const fetchLimit = 200;
+    let fetchPage = 1;
+    for (;;) {
+      const result = await studentsService.list({
+        schoolYearId: forSchoolYearId,
+        classId: forClassId,
+        sortBy,
+        sortOrder,
+        page: fetchPage,
+        limit: fetchLimit,
+      });
+      all.push(...result.data);
+      if (all.length >= result.pagination.total || result.data.length === 0) break;
+      fetchPage++;
+    }
+    return all.map((s) => s.id);
+  };
+
   const persistSortAsDisplayOrder = async (
     forSchoolYearId: string,
     forClassId: string,
@@ -352,29 +393,17 @@ export function StudentsPage() {
     const sortKey = sortColumn.columnKey;
     const sortDir = sortColumn.direction === 'ASC' ? 'asc' : 'desc';
 
-    const all: Student[] = [];
-    const fetchLimit = 200;
-    let fetchPage = 1;
-    for (;;) {
-      const result = await studentsService.list({
-        schoolYearId: forSchoolYearId,
-        classId: forClassId,
-        sortBy: sortKey,
-        sortOrder: sortDir,
-        page: fetchPage,
-        limit: fetchLimit,
-      });
-      all.push(...result.data);
-      if (all.length >= result.pagination.total || result.data.length === 0) break;
-      fetchPage++;
-    }
+    // The order before the sort takes effect — needed so this can be undone.
+    const prevOrder = await fetchAllStudentIds(forSchoolYearId, forClassId);
+    const nextOrder = await fetchAllStudentIds(forSchoolYearId, forClassId, sortKey, sortDir);
 
-    if (all.length > 0) {
+    if (nextOrder.length > 0) {
       await studentsService.reorder({
         schoolYearId: forSchoolYearId,
         classId: forClassId,
-        items: all.map((s, idx) => ({ studentId: s.id, order: idx + 1 })),
+        items: nextOrder.map((studentId, idx) => ({ studentId, order: idx + 1 })),
       });
+      pushUndo({ kind: 'reorder', prevOrder, nextOrder });
     }
   };
 
@@ -512,6 +541,8 @@ export function StudentsPage() {
                 <StudentCardList
                   rows={data}
                   loading={loading}
+                  visibleKeys={visibleKeys}
+                  dynamicColumns={dynamicColumns}
                   onOpenDetail={setDetailStudent}
                   onEditFull={(student) => {
                     setEditing(student);

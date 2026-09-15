@@ -46,7 +46,7 @@ interface Props {
   onRequestBlankRow: () => Student;
   /** Pasted data had more columns than exist from the paste anchor onward — create `count` new text columns. */
   onCreateColumns: (count: number) => Promise<StudentColumnDef[]>;
-  onReorder: (orderedStudentIds: string[]) => Promise<void>;
+  onReorder: (prevOrderedStudentIds: string[], nextOrderedStudentIds: string[]) => Promise<void>;
   onEditFull: (student: Student) => void;
   onDelete: (id: string) => void;
 }
@@ -219,6 +219,7 @@ export function StudentGrid({
     if (!sourceId || sourceId === targetId) return;
 
     const current = [...localRows];
+    const prevOrder = current.map((r) => r.id);
     const fromIdx = current.findIndex((r) => r.id === sourceId);
     const toIdx = current.findIndex((r) => r.id === targetId);
     if (fromIdx === -1 || toIdx === -1) return;
@@ -226,7 +227,7 @@ export function StudentGrid({
     const [moved] = current.splice(fromIdx, 1);
     current.splice(toIdx, 0, moved);
     setLocalRows(current);
-    onReorder(current.map((r) => r.id)).catch(() => {
+    onReorder(prevOrder, current.map((r) => r.id)).catch(() => {
       message.error('Không thể lưu thứ tự mới');
       setLocalRows(rows);
     });
