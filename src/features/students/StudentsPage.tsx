@@ -478,7 +478,7 @@ export function StudentsPage() {
           <Divider style={{ margin: '20px 0 16px' }} />
           <Space wrap style={{ marginBottom: 16 }}>
             <Input
-              placeholder="Tìm kiếm theo tên, mã định danh, SĐT bố/mẹ..."
+              placeholder="Tìm kiếm theo mọi thông tin (tên, phụ huynh, địa chỉ, sức khỏe...)"
               prefix={<SearchOutlined />}
               style={{ width: 320 }}
               value={search}

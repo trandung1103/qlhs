@@ -97,6 +97,11 @@ export interface StudentQueryParams {
   gender?: Gender;
   status?: StudentStatus;
   hasHealthInsurance?: boolean;
+  ethnicity?: string;
+  bloodType?: string;
+  policyCategory?: string;
+  dateOfBirthFrom?: string;
+  dateOfBirthTo?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
   page?: number;
