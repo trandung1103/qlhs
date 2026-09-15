@@ -16,3 +16,24 @@
 .sms-draggable-header {
   cursor: move;
 }
+
+/* Excel-like highlight for a multi-cell range selection (copy/paste). */
+.sms-range-selected {
+  background-color: rgba(22, 119, 255, 0.12) !important;
+}
+
+/* While drag-selecting a cell range, stop the browser from also starting
+   its own text selection over the grid. */
+.sms-dragging-selection {
+  user-select: none;
+}
+
+/* Phone-width screens (iPhone 11 Pro Max and similar are 414px wide):
+   taller tap targets, since a 24px-tall small button is hard to hit
+   reliably with a finger. Column widths stay as-is (they're fixed pixel
+   values in StudentGrid.tsx, already sized to fit the action buttons). */
+@media (max-width: 480px) {
+  .rdg .ant-btn-sm {
+    min-height: 36px;
+  }
+}
