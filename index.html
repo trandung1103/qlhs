@@ -7,7 +7,25 @@
     <title>Quản lý học sinh</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="sms-fallback" style="font-family: sans-serif; padding: 24px; text-align: center">
+        Đang tải…
+      </div>
+    </div>
+    <script>
+      // Catches failures the React app never got a chance to handle itself —
+      // most importantly a JS parse error in the bundle (e.g. syntax an older
+      // Safari can't parse at all), which would otherwise leave a fully blank
+      // page with zero indication anything went wrong.
+      window.addEventListener('error', function (e) {
+        var el = document.getElementById('sms-fallback');
+        if (!el) return;
+        el.textContent =
+          'Không tải được trang. Vui lòng thử tải lại hoặc cập nhật trình duyệt. (' +
+          (e.message || 'unknown error') +
+          ')';
+      });
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
