@@ -33,7 +33,7 @@ export function FilterPopover({ filters, onChange }: Props) {
   ];
 
   const content = (
-    <Space direction="vertical" style={{ width: 260 }}>
+    <Space direction="vertical" style={{ width: 'min(260px, 82vw)' }}>
       <div>
         <Typography.Text>Giới tính</Typography.Text>
         <Select
@@ -123,7 +123,15 @@ export function FilterPopover({ filters, onChange }: Props) {
   );
 
   return (
-    <Popover title="Bộ lọc" trigger="click" open={open} onOpenChange={setOpen} content={content} placement="bottomLeft">
+    <Popover
+      title="Bộ lọc"
+      trigger="click"
+      open={open}
+      onOpenChange={setOpen}
+      content={content}
+      placement="bottomLeft"
+      overlayStyle={{ maxWidth: '90vw' }}
+    >
       <Button icon={<FilterOutlined />}>Lọc{activeCount > 0 ? ` (${activeCount})` : ''}</Button>
     </Popover>
   );

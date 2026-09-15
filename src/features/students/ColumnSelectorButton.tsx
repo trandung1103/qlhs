@@ -26,7 +26,7 @@ export function ColumnSelectorButton({ schoolYearId, fieldDefinitions, onFieldsC
   };
 
   const content = (
-    <div style={{ maxHeight: 360, overflowY: 'auto', width: 280 }}>
+    <div style={{ maxHeight: 360, overflowY: 'auto', width: 'min(280px, 82vw)' }}>
       <Space direction="vertical" style={{ width: '100%' }}>
         {STUDENT_COLUMNS.map((col) => (
           <Checkbox
@@ -84,6 +84,7 @@ export function ColumnSelectorButton({ schoolYearId, fieldDefinitions, onFieldsC
         onOpenChange={setOpen}
         content={content}
         placement="bottomRight"
+        overlayStyle={{ maxWidth: '90vw' }}
       >
         <Button icon={<SettingOutlined />}>Chọn cột</Button>
       </Popover>

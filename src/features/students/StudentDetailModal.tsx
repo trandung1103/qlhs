@@ -38,16 +38,14 @@ const FAMILY_HEALTH_KEYS = new Set([
 ]);
 
 function DescriptionsFor({ defs, student }: { defs: StudentColumnDef[]; student: Student }) {
-  const items = defs
-    .map((def) => ({ def, value: def.getValue(student) }))
-    .filter(({ value }) => value !== '');
+  const items = defs.map((def) => ({ def, value: def.getValue(student) }));
 
   if (items.length === 0) return <Empty description="Chưa có dữ liệu" />;
   return (
     <Descriptions column={1} size="small" bordered>
       {items.map(({ def, value }) => (
         <Descriptions.Item key={def.key} label={def.label}>
-          {value}
+          {value === '' ? <span style={{ color: '#bbb' }}>—</span> : value}
         </Descriptions.Item>
       ))}
     </Descriptions>
