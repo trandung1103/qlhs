@@ -313,57 +313,61 @@ export function StudentsPage() {
       classId,
       items: orderedIds.map((studentId, idx) => ({ studentId, order: idx + 1 })),
     });
+    // A manual drag takes precedence over whatever sort was showing — drop
+    // back to the plain (now manually-adjusted) displayOrder view instead of
+    // re-querying by the old sort on the next reload, which would otherwise
+    // make the drag look like it didn't stick.
+    if (sortColumns.length > 0) setSortColumns([]);
   };
 
-  // Sorting is normally just a view — drag-to-reorder is disabled while a sort
-  // is active because dragging would fight the sort on the next reload. So
-  // when a sort is applied, commit it as the new displayOrder for the whole
-  // class right away (fetching every matching row, not just the current
-  // page) and drop back to the (now up to date) unsorted view — from there
-  // dragging works immediately to fine-tune further.
-  const handleSortColumnsChange = async (columns: SortColumn[]) => {
-    if (!schoolYearId || !classId || columns.length === 0 || hasActiveViewFilters) {
-      setSortColumns(columns);
-      return;
+  // Click-to-sort must behave the normal spreadsheet way — 1st click ASC,
+  // 2nd click DESC, 3rd click back to unsorted — so `sortColumns` is always
+  // set directly from what react-data-grid computes, never overridden.
+  // Separately (and silently, in the background), whenever a real sort is
+  // picked we also commit it as the new displayOrder for the whole class
+  // (fetching every matching row, not just the current page), so that
+  // dragging a row — which is always enabled, see `canReorder` below — has
+  // a sensible starting order to adjust from instead of fighting the sort's
+  // own ORDER BY on the next reload.
+  const handleSortColumnsChange = (columns: SortColumn[]) => {
+    setSortColumns(columns);
+    if (!schoolYearId || !classId || columns.length === 0 || hasActiveViewFilters) return;
+    persistSortAsDisplayOrder(schoolYearId, classId, columns[0]).catch((error) => {
+      message.error(getErrorMessage(error));
+    });
+  };
+
+  const persistSortAsDisplayOrder = async (
+    forSchoolYearId: string,
+    forClassId: string,
+    sortColumn: SortColumn,
+  ) => {
+    const sortKey = sortColumn.columnKey;
+    const sortDir = sortColumn.direction === 'ASC' ? 'asc' : 'desc';
+
+    const all: Student[] = [];
+    const fetchLimit = 200;
+    let fetchPage = 1;
+    for (;;) {
+      const result = await studentsService.list({
+        schoolYearId: forSchoolYearId,
+        classId: forClassId,
+        sortBy: sortKey,
+        sortOrder: sortDir,
+        page: fetchPage,
+        limit: fetchLimit,
+      });
+      all.push(...result.data);
+      if (all.length >= result.pagination.total || result.data.length === 0) break;
+      fetchPage++;
     }
 
-    const sortKey = columns[0].columnKey;
-    const sortDir = columns[0].direction === 'ASC' ? 'asc' : 'desc';
-
-    setLoading(true);
-    try {
-      const all: Student[] = [];
-      const fetchLimit = 200;
-      let fetchPage = 1;
-      for (;;) {
-        const result = await studentsService.list({
-          schoolYearId,
-          classId,
-          sortBy: sortKey,
-          sortOrder: sortDir,
-          page: fetchPage,
-          limit: fetchLimit,
-        });
-        all.push(...result.data);
-        if (all.length >= result.pagination.total || result.data.length === 0) break;
-        fetchPage++;
-      }
-
-      if (all.length > 0) {
-        await studentsService.reorder({
-          schoolYearId,
-          classId,
-          items: all.map((s, idx) => ({ studentId: s.id, order: idx + 1 })),
-        });
-        message.success('Đã lưu thứ tự theo sắp xếp — giờ có thể kéo-thả để chỉnh tiếp');
-      }
-      setSortColumns([]);
-      setPage(1);
-      await load();
-    } catch (error) {
-      message.error(getErrorMessage(error));
-    } finally {
-      setLoading(false);
+    if (all.length > 0) {
+      await studentsService.reorder({
+        schoolYearId: forSchoolYearId,
+        classId: forClassId,
+        items: all.map((s, idx) => ({ studentId: s.id, order: idx + 1 })),
+      });
     }
   };
 
@@ -489,7 +493,7 @@ export function StudentsPage() {
                 dynamicColumns={dynamicColumns}
                 sortColumns={sortColumns}
                 onSortColumnsChange={handleSortColumnsChange}
-                canReorder={sortColumns.length === 0 && !hasActiveViewFilters}
+                canReorder={!hasActiveViewFilters}
                 onCellCommit={handleCellCommit}
                 onBulkPaste={handleBulkPaste}
                 onCreateBlankRows={handleCreateBlankRows}
